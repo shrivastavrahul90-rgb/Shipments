@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Operations console</title>
+<style>
+  :root{
+    --bg:#F5F4EF; --panel:#FBFAF6; --card:#FFFFFF; --line:#E7E4DB;
+    --ink:#1B1B18; --muted:#73706A; --faint:#9A968D;
+    --ok:#15803D; --ok-bg:#ECFDF3;
+    --warn:#B45309; --warn-bg:#FBF1E2;
+    --bad:#B42318; --bad-bg:#FCEEEC;
+    --neutral:#5B6470; --neutral-bg:#EFEFEC;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  .layout{display:flex;min-height:100vh}
+  .side{width:240px;border-right:1px solid var(--line);padding:22px 16px;flex-shrink:0}
+  .brand-k{font-size:11px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+  .brand{font-size:18px;font-weight:700;margin-top:2px}
+  .nav{margin-top:26px;display:flex;flex-direction:column;gap:4px}
+  .nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    padding:10px 12px;border:none;background:none;border-radius:9px;cursor:pointer;
+    font-size:14px;color:var(--muted);font-family:var(--sans)}
+  .nav button.active{background:#EAE8E0;color:var(--ink);font-weight:600}
+  .main{flex:1;padding:26px 30px 60px;max-width:1200px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+  .page-k{font-size:11px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+  .page-h{font-size:24px;font-weight:700;margin-top:2px}
+  .btn{padding:9px 14px;border:1px solid var(--line);background:var(--card);border-radius:9px;
+    cursor:pointer;font-size:13px;font-weight:600;color:var(--ink);font-family:var(--sans)}
+  .btn:hover{background:#FdFcF8}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+  .hero{padding:24px 26px;margin-bottom:16px;display:flex;align-items:baseline;gap:16px}
+  .hero .n{font-size:46px;font-weight:800;font-family:var(--mono);line-height:1}
+  .hero .lbl{font-size:15px;color:var(--muted)}
+  .toolbar{display:flex;gap:10px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .search{flex:1;min-width:200px;display:flex;align-items:center;gap:8px;color:var(--faint)}
+  .search input{flex:1;border:none;background:none;outline:none;font-size:14px;font-family:var(--sans);color:var(--ink)}
+  select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13px;font-family:var(--sans)}
+  .count{font-size:12px;color:var(--faint);font-family:var(--mono);white-space:nowrap}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;padding:11px 16px;border-bottom:1px solid var(--line)}
+  td{padding:13px 16px;border-bottom:1px solid #F1EFE8;font-size:14px}
+  tr:last-child td{border-bottom:none}
+  .num{font-family:var(--mono);text-align:right}
+  .order{font-family:var(--mono);font-weight:600}
+  .awb{font-family:var(--mono);color:var(--muted)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+  .ok{color:var(--ok);background:var(--ok-bg)}
+  .warn{color:var(--warn);background:var(--warn-bg)}
+  .bad{color:var(--bad);background:var(--bad-bg)}
+  .neutral{color:var(--neutral);background:var(--neutral-bg)}
+  .red{color:var(--bad);font-weight:700}
+  .empty{padding:34px;text-align:center;color:var(--faint);font-size:14px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+  .stat{padding:18px 20px}
+  .stat .k{font-size:13px;color:var(--muted)}
+  .stat .v{font-size:30px;font-weight:700;font-family:var(--mono);margin-top:6px}
+  .stat .s{font-size:12px;color:var(--faint);font-family:var(--mono);margin-top:2px}
+  .banner{padding:14px 18px;border-radius:12px;margin-bottom:16px;font-size:13px;border:1px solid}
+  .banner.err{background:var(--bad-bg);border-color:#F3C9C4;color:var(--bad)}
+  .banner.warn2{background:var(--warn-bg);border-color:#EAD8B6;color:var(--warn)}
+  @media(max-width:760px){
+    .layout{flex-direction:column}.side{width:auto;border-right:none;border-bottom:1px solid var(--line)}
+    .nav{flex-direction:row;flex-wrap:wrap;margin-top:14px}.main{padding:20px 16px 50px}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="side">
+    <div class="brand-k">Shipments</div>
+    <div class="brand">Operations console</div>
+    <nav class="nav" id="nav">
+      <button data-view="stuck" class="active">⚠️ Stuck shipments</button>
+      <button data-view="all">📦 All shipments</button>
+      <button data-view="overview">📊 Overview</button>
+    </nav>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="page-k" id="pageK">Page</div>
+        <div class="page-h" id="pageH">Loading…</div>
+      </div>
+      <button class="btn" id="refresh">↻ Refresh</button>
+    </div>
+    <div id="content"><div class="card empty">Connecting to your data…</div></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://myndamxcarcrlzxdlirh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15bmRhbXhjYXJjcmx6eGRsaXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzYzODEsImV4cCI6MjA5ODA1MjM4MX0.oPG3UvLD-jYi-6fGyvj9W24prUZ2-6emp9oZhbt2SmE";
+
+const STALE_HOURS = 48;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let ALL = [];
+let view = "stuck";
+let search = "";
+let statusFilter = "";
+let deliveredFilter = "all";
+
+const $ = (id) => document.getElementById(id);
+const inr = (n) => isFinite(n)
+  ? new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(n)
+  : "—";
+const movedAt = (r) => new Date(r.last_event_at || r.status_changed_at || Date.now());
+const hoursStuck = (r) => (Date.now() - movedAt(r).getTime())/3600000;
+const isStuck = (r) => !r.is_terminal && hoursStuck(r) >= STALE_HOURS;
+
+function pillClass(s){
+  s=(s||"").toLowerCase();
+  if(s.includes("delivered")) return "ok";
+  if(s.includes("exception")||s.includes("rto")||s.includes("lost")||s.includes("undeliver")||s.includes("fail")) return "bad";
+  if(s.includes("transit")||s.includes("pending")||s.includes("pickup")||s.includes("out for")||s.includes("manifest")) return "warn";
+  return "neutral";
+}
+const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function loadData(){
+  $("content").innerHTML = '<div class="card empty">Loading your shipments…</div>';
+  try{
+    const pageSize = 1000; let from = 0; const out = [];
+    while(true){
+      const { data, error } = await sb.from("shipments")
+        .select("order_ref,awb,current_status,is_terminal,payment_type,cod_amount,last_event_at,status_changed_at,last_synced_at")
+        .order("last_event_at",{ascending:false})
+        .range(from, from+pageSize-1);
+      if(error) throw error;
+      out.push(...data);
+      if(data.length < pageSize) break;
+      from += pageSize;
+    }
+    ALL = out;
+    render();
+  }catch(e){
+    $("pageH").textContent = "Couldn't load data";
+    $("content").innerHTML =
+      '<div class="banner err"><b>Could not read from Supabase.</b><br>'+esc(e.message||e)+
+      '</div><div class="card empty">Check that the URL + anon key at the top of the file are correct, '+
+      'and that the read policy allows anonymous access.</div>';
+  }
+}
+
+function applySearch(rows){
+  if(!search.trim()) return rows;
+  const q = search.trim().toLowerCase();
+  return rows.filter(r => (r.order_ref||"").toLowerCase().includes(q) || (r.awb||"").toLowerCase().includes(q));
+}
+
+function statusPill(s){ return '<span class="pill '+pillClass(s)+'">'+esc(s||"unknown")+'</span>'; }
+function payText(p){ return esc((p||"").toUpperCase()); }
+
+function render(){
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active", b.dataset.view===view));
+  if(view==="stuck") return renderStuck();
+  if(view==="all") return renderAll();
+  return renderOverview();
+}
+
+function renderStuck(){
+  $("pageK").textContent = "Page 1";
+  $("pageH").textContent = "Stuck shipments";
+  const stuck = applySearch(ALL.filter(isStuck)).sort((a,b)=>hoursStuck(b)-hoursStuck(a));
+  const total = ALL.filter(isStuck).length;
+  const rows = stuck.map(r=>{
+    const h = hoursStuck(r);
+    const hCls = h>72 ? ' class="num red"' : ' class="num"';
+    return '<tr>'+
+      '<td class="order">'+esc(r.order_ref)+'</td>'+
+      '<td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+statusPill(r.current_status)+'</td>'+
+      '<td'+hCls+'>'+h.toFixed(1)+'h</td>'+
+      '<td>'+payText(r.payment_type)+'</td>'+
+      '<td class="num">'+inr(Number(r.cod_amount))+'</td>'+
+    '</tr>';
+  }).join("");
+  const hero = total===0
+    ? '<div class="card hero"><div class="n">0</div><div class="lbl">All clear — every shipment moved in the last 48 hours.</div></div>'
+    : '<div class="card hero"><div class="n">'+total+'</div><div class="lbl">shipments stuck 48h+</div></div>';
+  const table = stuck.length===0
+    ? '<div class="card empty">'+(total===0?"Nothing stuck right now.":"No matches for your search.")+'</div>'
+    : '<div class="card"><div class="toolbar">'+searchBox()+'<span class="count">'+stuck.length+' of '+total+'</span></div>'+
+      '<table><thead><tr><th>Order</th><th>AWB</th><th>Status</th><th style="text-align:right">Hours stuck</th><th>Payment</th><th style="text-align:right">Value</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  $("content").innerHTML = hero + table + zeroHint();
+  wireSearch();
+}
+
+function renderAll(){
+  $("pageK").textContent = "Page 2";
+  $("pageH").textContent = "All shipments";
+  let rows = ALL.slice();
+  if(statusFilter) rows = rows.filter(r=>(r.current_status||"")===statusFilter);
+  if(deliveredFilter==="delivered") rows = rows.filter(r=>r.is_terminal);
+  if(deliveredFilter==="not") rows = rows.filter(r=>!r.is_terminal);
+  rows = applySearch(rows);
+  const statuses = [...new Set(ALL.map(r=>r.current_status).filter(Boolean))].sort();
+  const body = rows.map(r=>'<tr>'+
+      '<td class="order">'+esc(r.order_ref)+'</td>'+
+      '<td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+statusPill(r.current_status)+'</td>'+
+      '<td>'+payText(r.payment_type)+'</td>'+
+      '<td class="num">'+inr(Number(r.cod_amount))+'</td>'+
+      '<td class="num" style="color:var(--muted)">'+esc(movedAt(r).toLocaleString("en-IN"))+'</td>'+
+    '</tr>').join("");
+  const toolbar = '<div class="toolbar">'+searchBox()+
+    '<select id="fStatus"><option value="">All statuses</option>'+
+      statuses.map(s=>'<option '+(s===statusFilter?"selected":"")+'>'+esc(s)+'</option>').join("")+'</select>'+
+    '<select id="fDeliv">'+
+      '<option value="all"'+(deliveredFilter==="all"?" selected":"")+'>Delivered & not</option>'+
+      '<option value="not"'+(deliveredFilter==="not"?" selected":"")+'>Not delivered</option>'+
+      '<option value="delivered"'+(deliveredFilter==="delivered"?" selected":"")+'>Delivered</option>'+
+    '</select>'+
+    '<span class="count">'+rows.length+'</span></div>';
+  $("content").innerHTML = '<div class="card">'+toolbar+
+    (rows.length===0?'<div class="empty">No matches.</div>':
+    '<table><thead><tr><th>Order</th><th>AWB</th><th>Status</th><th>Payment</th><th style="text-align:right">Value</th><th style="text-align:right">Last moved</th></tr></thead><tbody>'+body+'</tbody></table>')+
+    '</div>'+zeroHint();
+  wireSearch();
+  $("fStatus").onchange=e=>{statusFilter=e.target.value;renderAll();};
+  $("fDeliv").onchange=e=>{deliveredFilter=e.target.value;renderAll();};
+}
+
+function renderOverview(){
+  $("pageK").textContent = "Page 3";
+  $("pageH").textContent = "Overview";
+  const total = ALL.length;
+  const delivered = ALL.filter(r=>r.is_terminal).length;
+  const notDelivered = total - delivered;
+  const cod = ALL.filter(r=>(r.payment_type||"").toLowerCase().includes("cod")).length;
+  const prepaid = total - cod;
+  const stuck = ALL.filter(isStuck).length;
+  const openValue = ALL.filter(r=>!r.is_terminal).reduce((a,r)=>a+(Number(r.cod_amount)||0),0);
+  const card=(k,v,s)=>'<div class="card stat"><div class="k">'+k+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>';
+  $("content").innerHTML = '<div class="cards">'+
+    card("Total shipments", total) +
+    card("Stuck 48h+", stuck, "need attention") +
+    card("Delivered", delivered) +
+    card("Not delivered", notDelivered) +
+    card("COD vs prepaid", cod+" / "+prepaid) +
+    card("Value in transit", inr(openValue), "all non-delivered") +
+  '</div>' + zeroHint();
+}
+
+function zeroHint(){
+  if(ALL.length>0) return "";
+  return '<div class="banner warn2" style="margin-top:16px"><b>Connected, but 0 rows came back.</b> '+
+    'That usually means the read policy is blocking anonymous access. Tell your assistant "0 rows in Vercel" and run the read-policy SQL.</div>';
+}
+
+function searchBox(){
+  return '<div class="search">🔎<input id="searchInput" placeholder="Search by order number or AWB" value="'+esc(search)+'"></div>';
+}
+function wireSearch(){
+  const el=$("searchInput"); if(!el) return;
+  el.oninput=e=>{search=e.target.value;
+    const pos=e.target.selectionStart;
+    if(view==="stuck")renderStuck();else if(view==="all")renderAll();
+    const n=$("searchInput"); if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(_){}}
+  };
+}
+
+document.querySelectorAll("#nav button").forEach(b=>{
+  b.onclick=()=>{view=b.dataset.view;search="";render();};
+});
+$("refresh").onclick=loadData;
+loadData();
+</script>
+</body>
+</html>
