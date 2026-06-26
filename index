@@ -322,9 +322,8 @@ function setRangeNote(){
 
 function render(){
   setRangeNote();
-  const showCtrls = view!=="recon";
-  $("ctrls").style.display = showCtrls?"flex":"none";
-  $("rangenote").style.display = showCtrls?"block":"none";
+  $("ctrls").style.display = "flex";
+  $("rangenote").style.display = "block";
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active", b.dataset.view===view));
   if(view==="stuck") return renderStuck();
   if(view==="all") return renderAll();
@@ -478,9 +477,10 @@ function setPreset(p){
   document.querySelectorAll("#presets button").forEach(b=>b.classList.toggle("on", b.dataset.preset===p));
 }
 
-/* ---------- COD reconciliation ---------- */
+/* ---------- COD reconciliation (cumulative ledger in Supabase) ---------- */
 const RECON_TAT_DAYS = 7;
-let depositFileName = "";
+let payments = null;          // full ledger loaded from cod_payments
+let paymentsLoading = false;
 let recon = null;
 let reconBucket = "unpaid";
 
@@ -489,87 +489,140 @@ const normOrd = s => String(s==null?"":s).trim().replace(/^#+/,"").toUpperCase()
 const daysSince = iso => iso ? (Date.now()-new Date(iso).getTime())/86400000 : 999;
 const isDeliveredCOD = r => stageOf(r.current_status)==="delivered" && (r.payment_type||"").toLowerCase().includes("cod");
 
-function handleFile(file){
-  depositFileName = file.name;
-  const reader = new FileReader();
-  reader.onload = e=>{
-    try{
-      const wb = XLSX.read(new Uint8Array(e.target.result), {type:"array"});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {defval:""});
-      computeRecon(rows);
-      reconBucket = "unpaid";
-      renderRecon();
-    }catch(err){
-      $("content").innerHTML = '<div class="banner err"><b>Could not read that file.</b><br>'+esc(err.message||err)+'</div>'+reconUploadHTML();
-      wireDrop();
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function computeRecon(rows){
-  const empty = {unpaid:[],awaiting:[],mismatch:[],reconciled:[],unmatched:[],lines:0,checked:0};
-  if(!rows || !rows.length){ recon = empty; return; }
+function parseRows(rows, fname){
+  if(!rows || !rows.length) return [];
   const keys = Object.keys(rows[0]);
   const find = (...subs)=>keys.find(k=>{const l=k.toLowerCase(); return subs.every(s=>l.includes(s));});
   const kAwb = find("awb") || find("waybill");
   const kOrd = find("order","id") || find("order");
   const kAmt = find("amount") || find("cod") || find("remit");
   const kDel = find("delivery");
-
-  const deposits = rows.map(r=>({
+  return rows.map(r=>({
     awb: normAwb(r[kAwb]),
     ord: normOrd(r[kOrd]),
     amt: parseFloat(String(r[kAmt]).replace(/[^0-9.\-]/g,"")) || 0,
     del: String(r[kDel]||""),
-    rawOrd: String(r[kOrd]||"")
+    rawOrd: String(r[kOrd]||""),
+    source: fname||""
   })).filter(d=>d.awb||d.ord);
+}
 
-  const byAwb = new Map(), byOrd = new Map();
-  deposits.forEach(d=>{ if(d.awb) byAwb.set(d.awb,d); if(d.ord) byOrd.set(d.ord,d); });
+async function parseFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(buf), {type:"array"});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {defval:""});
+  return parseRows(rows, file.name);
+}
 
-  const shipAwb = new Set(), shipOrd = new Set();
+async function savePayments(deposits){
+  const seen = new Set();
+  const rows = [];
+  deposits.filter(d=>d.awb).forEach(d=>{
+    if(seen.has(d.awb)) return; seen.add(d.awb);
+    rows.push({awb:d.awb, order_ref:(d.rawOrd||("#"+d.ord)), amount:d.amt, delivery_date:d.del, source_file:d.source});
+  });
+  for(let i=0;i<rows.length;i+=500){
+    const { error } = await sb.from("cod_payments")
+      .upsert(rows.slice(i,i+500), {onConflict:"awb", ignoreDuplicates:true});
+    if(error) throw error;
+  }
+  return rows.length;
+}
+
+async function loadPayments(){
+  try{
+    const pageSize=1000; let from=0; const out=[];
+    while(true){
+      const { data, error } = await sb.from("cod_payments")
+        .select("awb,order_ref,amount,delivery_date,source_file,uploaded_at")
+        .range(from, from+pageSize-1);
+      if(error) throw error;
+      out.push(...data);
+      if(data.length<pageSize) break;
+      from+=pageSize;
+    }
+    payments = out.map(p=>({
+      awb:normAwb(p.awb), ord:normOrd(p.order_ref), amt:Number(p.amount)||0,
+      del:p.delivery_date||"", rawOrd:p.order_ref||"", uploaded:p.uploaded_at
+    }));
+    computeRecon(payments);
+  }catch(e){
+    payments = [];
+    paymentsLoading = false;
+    $("content").innerHTML='<div class="banner err"><b>Could not load the payment ledger.</b><br>'+esc(e.message||e)+
+      '</div><div class="card empty">If this is the first run, make sure the cod_payments table and its read policy exist in Supabase.</div>';
+    return;
+  }
+  paymentsLoading = false;
+  renderRecon();
+}
+
+async function handleFiles(fileList){
+  const files = Array.from(fileList);
+  if(!files.length) return;
+  $("content").innerHTML = '<div class="card empty">Reading '+files.length+' file'+(files.length>1?'s':'')+' and saving to your ledger…</div>';
+  try{
+    let all=[];
+    for(const f of files){ all = all.concat(await parseFile(f)); }
+    const saved = await savePayments(all);
+    payments=null; recon=null;
+    await loadPayments();
+  }catch(err){
+    payments = payments || [];
+    $("content").innerHTML='<div class="banner err"><b>Upload failed.</b><br>'+esc(err.message||err)+'</div>'+
+      '<div class="drop" id="drop" style="margin-top:14px"><div class="dt">Try again</div><label for="codfile">Choose files</label>'+fileInputHTML()+'</div>';
+    wireUpload();
+  }
+}
+
+function computeRecon(deposits){
+  const byAwb=new Map(), byOrd=new Map();
+  (deposits||[]).forEach(d=>{ if(d.awb) byAwb.set(d.awb,d); if(d.ord) byOrd.set(d.ord,d); });
+  const shipAwb=new Set(), shipOrd=new Set();
   ALL.forEach(r=>{ if(r.awb) shipAwb.add(normAwb(r.awb)); if(r.order_ref) shipOrd.add(normOrd(r.order_ref)); });
-
-  const res = {unpaid:[],awaiting:[],mismatch:[],reconciled:[],unmatched:[],lines:deposits.length,checked:0};
-  ALL.filter(isDeliveredCOD).forEach(r=>{
+  const res={unpaid:[],awaiting:[],mismatch:[],reconciled:[],unmatched:[],lines:(deposits||[]).length,checked:0};
+  windowed().filter(isDeliveredCOD).forEach(r=>{
     res.checked++;
-    const a = normAwb(r.awb), o = normOrd(r.order_ref);
-    const dep = (a && byAwb.get(a)) || (o && byOrd.get(o)) || null;
+    const a=normAwb(r.awb), o=normOrd(r.order_ref);
+    const dep=(a&&byAwb.get(a))||(o&&byOrd.get(o))||null;
     if(dep){
-      const exp = Number(r.cod_amount)||0, got = dep.amt||0;
-      if(exp>0 && got>0 && Math.abs(exp-got)>1) res.mismatch.push({r,exp,got,diff:got-exp});
+      const exp=Number(r.cod_amount)||0, got=dep.amt||0;
+      if(exp>0&&got>0&&Math.abs(exp-got)>1) res.mismatch.push({r,exp,got,diff:got-exp});
       else res.reconciled.push({r,got});
     }else{
-      const age = daysSince(r.last_event_at||r.status_changed_at);
+      const age=daysSince(r.last_event_at||r.status_changed_at);
       if(age>RECON_TAT_DAYS) res.unpaid.push({r,age});
       else res.awaiting.push({r,age});
     }
   });
-  deposits.forEach(d=>{
-    const inShip = (d.awb && shipAwb.has(d.awb)) || (d.ord && shipOrd.has(d.ord));
+  (deposits||[]).forEach(d=>{
+    const inShip=(d.awb&&shipAwb.has(d.awb))||(d.ord&&shipOrd.has(d.ord));
     if(!inShip) res.unmatched.push(d);
   });
-  recon = res;
+  recon=res;
 }
+
+function fileInputHTML(){ return '<input type="file" id="codfile" accept=".csv,.xlsx,.xls" multiple style="display:none">'; }
 
 function reconUploadHTML(){
   return '<div class="drop" id="drop">'+
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'+
-    '<div class="dt">Upload your COD remittance file</div>'+
-    '<div class="ds">CSV or Excel from NimbusPost. Each line is matched to your delivered COD orders by AWB, then anything delivered but unpaid past '+RECON_TAT_DAYS+' days gets flagged.</div>'+
-    '<label for="codfile">Choose file</label>'+
-    '<input type="file" id="codfile" accept=".csv,.xlsx,.xls" style="display:none">'+
+    '<div class="dt">Upload your COD remittance files</div>'+
+    '<div class="ds">Drop one or many CSV / Excel files from NimbusPost. They are saved to your ledger in the cloud, so the reconciliation always reflects every payment you have ever uploaded.</div>'+
+    '<label for="codfile">Choose files</label>'+
+    fileInputHTML()+
     '</div>';
 }
-function wireDrop(){
-  const inp = $("codfile");
-  if(inp) inp.onchange = e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
-  const dz = $("drop"); if(!dz) return;
-  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add("drag");}));
-  ["dragleave"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove("drag");}));
-  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag"); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);});
+
+function wireUpload(){
+  const inp=$("codfile");
+  if(inp) inp.onchange=e=>{ if(e.target.files.length) handleFiles(e.target.files); };
+  const dz=$("drop"); if(dz){
+    ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add("drag");}));
+    dz.addEventListener("dragleave",e=>{e.preventDefault();dz.classList.remove("drag");});
+    dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag"); if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);});
+  }
 }
 
 function tableCard(headers,body,aligns){
@@ -583,7 +636,7 @@ function reconTable(){
   const b = reconBucket;
   if(b==="unpaid" || b==="awaiting"){
     const arr = recon[b].slice().sort((x,y)=>y.age-x.age);
-    if(!arr.length) return emptyCard(b==="unpaid"?"No overdue unpaid COD orders — you're square.":"Nothing waiting inside the "+RECON_TAT_DAYS+"-day window.");
+    if(!arr.length) return emptyCard(b==="unpaid"?"No overdue unpaid COD orders — you are square.":"Nothing waiting inside the "+RECON_TAT_DAYS+"-day window.");
     const body = arr.map(({r,age})=>'<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
       '<td>'+statusPill(r.current_status)+'</td>'+tdN(Math.round(age)+'d')+
@@ -601,7 +654,7 @@ function reconTable(){
   }
   if(b==="reconciled"){
     const arr = recon.reconciled;
-    if(!arr.length) return emptyCard("No reconciled orders in this file yet.");
+    if(!arr.length) return emptyCard("No reconciled orders yet — upload a remittance file.");
     const body = arr.map(({r,got})=>'<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
       '<td style="color:var(--muted)">'+esc(movedAt(r).toLocaleDateString("en-IN"))+'</td>'+
@@ -619,30 +672,38 @@ function reconTable(){
 function renderRecon(){
   $("pageK").textContent = "Console";
   $("pageH").textContent = "COD reconciliation";
-  if(!recon){
-    $("content").innerHTML = reconUploadHTML();
-    wireDrop();
+  if(payments===null){
+    $("content").innerHTML = '<div class="card empty">Loading your payment ledger…</div>';
+    if(!paymentsLoading){ paymentsLoading=true; loadPayments(); }
     return;
   }
+  if(!payments.length){
+    $("content").innerHTML = reconUploadHTML();
+    wireUpload();
+    return;
+  }
+  computeRecon(payments);
   const sumVal = arr=>arr.reduce((a,x)=>a+(Number(x.r?x.r.cod_amount:x.amt)||0),0);
   const sumDep = arr=>arr.reduce((a,x)=>a+(Number(x.got!=null?x.got:x.amt)||0),0);
   const buckets = [
-    {key:"unpaid",     label:"Unpaid · overdue",     color:"#DC2626", n:recon.unpaid.length,     amt:sumVal(recon.unpaid)},
-    {key:"awaiting",   label:"Awaiting · \u22647d",   color:"#C77807", n:recon.awaiting.length,   amt:sumVal(recon.awaiting)},
-    {key:"mismatch",   label:"Amount mismatch",       color:"#C2410C", n:recon.mismatch.length,   amt:sumVal(recon.mismatch)},
-    {key:"reconciled", label:"Reconciled",            color:"#16A34A", n:recon.reconciled.length, amt:sumDep(recon.reconciled)},
-    {key:"unmatched",  label:"Unmatched deposits",    color:"#6B7280", n:recon.unmatched.length,  amt:sumDep(recon.unmatched)},
+    {key:"unpaid",     label:"Unpaid · overdue",  color:"#DC2626", n:recon.unpaid.length,     amt:sumVal(recon.unpaid)},
+    {key:"awaiting",   label:"Awaiting · ≤7d", color:"#C77807", n:recon.awaiting.length,   amt:sumVal(recon.awaiting)},
+    {key:"mismatch",   label:"Amount mismatch",        color:"#C2410C", n:recon.mismatch.length,   amt:sumVal(recon.mismatch)},
+    {key:"reconciled", label:"Reconciled",             color:"#16A34A", n:recon.reconciled.length, amt:sumDep(recon.reconciled)},
+    {key:"unmatched",  label:"Unmatched deposits",     color:"#6B7280", n:recon.unmatched.length,  amt:sumDep(recon.unmatched)},
   ];
   const cards = buckets.map(b=>'<div class="card rcard'+(reconBucket===b.key?' on':'')+'" data-bk="'+b.key+'">'+
     '<div class="rk"><span class="d" style="background:'+b.color+'"></span>'+b.label+'</div>'+
     '<div class="rv">'+b.n+'</div><div class="rs">'+inr(b.amt)+'</div></div>').join("");
+  const lastUp = payments.reduce((m,p)=>{const t=Date.parse(p.uploaded||""); return t>m?t:m;},0);
+  const when = lastUp ? (' · last upload '+new Date(lastUp).toLocaleDateString("en-IN")) : '';
   const bar = '<div class="fbar2">'+
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'+
-    'Checked <b style="color:var(--ink);font-weight:600">'+recon.checked+'</b> delivered COD orders against <b style="color:var(--ink);font-weight:600">'+esc(depositFileName)+'</b> ('+recon.lines+' deposit lines)'+
-    '<button class="clr" id="clrRecon">Upload another file</button></div>';
-  $("content").innerHTML = bar + '<div class="rcards">'+cards+'</div>' + reconTable();
+    '<b style="color:var(--ink);font-weight:600">'+payments.length+'</b>&nbsp;payments in ledger · checked against <b style="color:var(--ink);font-weight:600">'+recon.checked+'</b> delivered COD orders'+when+
+    '<label class="clr" for="codfile">Upload more files</label></div>';
+  $("content").innerHTML = bar + '<div class="rcards">'+cards+'</div>' + reconTable() + fileInputHTML();
   document.querySelectorAll(".rcard").forEach(c=>c.onclick=()=>{ reconBucket=c.dataset.bk; renderRecon(); });
-  $("clrRecon").onclick = ()=>{ recon=null; depositFileName=""; renderRecon(); };
+  wireUpload();
 }
 
 document.querySelectorAll("#nav button").forEach(b=>{
