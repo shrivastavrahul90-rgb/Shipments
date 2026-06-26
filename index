@@ -27,12 +27,19 @@
     font-size:14px;color:var(--muted);font-family:var(--sans)}
   .nav button.active{background:#EAE8E0;color:var(--ink);font-weight:600}
   .main{flex:1;padding:26px 30px 60px;max-width:1200px}
-  .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:16px;flex-wrap:wrap}
   .page-k{font-size:11px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
   .page-h{font-size:24px;font-weight:700;margin-top:2px}
-  .btn{padding:9px 14px;border:1px solid var(--line);background:var(--card);border-radius:9px;
+  .ctrls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .ctrls input[type=date]{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);
+    font-size:13px;font-family:var(--sans);color:var(--ink)}
+  .ctrls .arrow{color:var(--faint)}
+  .btn{padding:8px 12px;border:1px solid var(--line);background:var(--card);border-radius:9px;
     cursor:pointer;font-size:13px;font-weight:600;color:var(--ink);font-family:var(--sans)}
-  .btn:hover{background:#FdFcF8}
+  .btn:hover{background:#FDFCF8}
+  .btn.sm{padding:7px 10px;font-size:12px}
+  .btn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .rangenote{font-size:12px;color:var(--faint);margin:-8px 0 16px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px}
   .hero{padding:24px 26px;margin-bottom:16px;display:flex;align-items:baseline;gap:16px}
   .hero .n{font-size:46px;font-weight:800;font-family:var(--mono);line-height:1}
@@ -89,8 +96,18 @@
         <div class="page-k" id="pageK">Page</div>
         <div class="page-h" id="pageH">Loading…</div>
       </div>
-      <button class="btn" id="refresh">↻ Refresh</button>
+      <div class="ctrls">
+        <input type="date" id="from" title="From date">
+        <span class="arrow">→</span>
+        <input type="date" id="to" title="To date">
+        <button class="btn sm" data-preset="15">15d</button>
+        <button class="btn sm" data-preset="30">30d</button>
+        <button class="btn sm" data-preset="90">90d</button>
+        <button class="btn sm" data-preset="all">All</button>
+        <button class="btn" id="refresh" title="Reload from database">↻</button>
+      </div>
     </div>
+    <div class="rangenote" id="rangenote"></div>
     <div id="content"><div class="card empty">Connecting to your data…</div></div>
   </main>
 </div>
@@ -109,6 +126,12 @@ let search = "";
 let statusFilter = "";
 let deliveredFilter = "all";
 
+function fmt(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function todayStr(){ return fmt(new Date()); }
+function addDaysStr(n){ const d=new Date(); d.setDate(d.getDate()+n); return fmt(d); }
+let dateFrom = addDaysStr(-15);   // default: last 15 days
+let dateTo = todayStr();
+
 const $ = (id) => document.getElementById(id);
 const inr = (n) => isFinite(n)
   ? new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(n)
@@ -116,6 +139,21 @@ const inr = (n) => isFinite(n)
 const movedAt = (r) => new Date(r.last_event_at || r.status_changed_at || Date.now());
 const hoursStuck = (r) => (Date.now() - movedAt(r).getTime())/3600000;
 const isStuck = (r) => !r.is_terminal && hoursStuck(r) >= STALE_HOURS;
+
+function rowDate(r){
+  if(r.created) return String(r.created).slice(0,10);
+  if(r.last_event_at) return String(r.last_event_at).slice(0,10);
+  if(r.status_changed_at) return String(r.status_changed_at).slice(0,10);
+  return "";
+}
+function inWindow(r){
+  const d = rowDate(r);
+  if(!d) return true;                 // unknown date -> don't hide
+  if(dateFrom && d < dateFrom) return false;
+  if(dateTo && d > dateTo) return false;
+  return true;
+}
+function windowed(){ return ALL.filter(inWindow); }
 
 function pillClass(s){
   s=(s||"").toLowerCase();
@@ -132,7 +170,7 @@ async function loadData(){
     const pageSize = 1000; let from = 0; const out = [];
     while(true){
       const { data, error } = await sb.from("shipments")
-        .select("order_ref,awb,current_status,is_terminal,payment_type,cod_amount,last_event_at,status_changed_at,last_synced_at")
+        .select("order_ref,awb,current_status,is_terminal,payment_type,cod_amount,last_event_at,status_changed_at,last_synced_at,created:raw->>created")
         .order("last_event_at",{ascending:false})
         .range(from, from+pageSize-1);
       if(error) throw error;
@@ -146,8 +184,7 @@ async function loadData(){
     $("pageH").textContent = "Couldn't load data";
     $("content").innerHTML =
       '<div class="banner err"><b>Could not read from Supabase.</b><br>'+esc(e.message||e)+
-      '</div><div class="card empty">Check that the URL + anon key at the top of the file are correct, '+
-      'and that the read policy allows anonymous access.</div>';
+      '</div><div class="card empty">Check the URL + anon key, and that the read policy allows anonymous access.</div>';
   }
 }
 
@@ -156,11 +193,16 @@ function applySearch(rows){
   const q = search.trim().toLowerCase();
   return rows.filter(r => (r.order_ref||"").toLowerCase().includes(q) || (r.awb||"").toLowerCase().includes(q));
 }
-
 function statusPill(s){ return '<span class="pill '+pillClass(s)+'">'+esc(s||"unknown")+'</span>'; }
 function payText(p){ return esc((p||"").toUpperCase()); }
 
+function setRangeNote(){
+  const r = (!dateFrom && !dateTo) ? "All dates" : (dateFrom||"…")+"  to  "+(dateTo||"…");
+  $("rangenote").textContent = "Showing orders created: " + r;
+}
+
 function render(){
+  setRangeNote();
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active", b.dataset.view===view));
   if(view==="stuck") return renderStuck();
   if(view==="all") return renderAll();
@@ -170,8 +212,9 @@ function render(){
 function renderStuck(){
   $("pageK").textContent = "Page 1";
   $("pageH").textContent = "Stuck shipments";
-  const stuck = applySearch(ALL.filter(isStuck)).sort((a,b)=>hoursStuck(b)-hoursStuck(a));
-  const total = ALL.filter(isStuck).length;
+  const base = windowed().filter(isStuck);
+  const stuck = applySearch(base).sort((a,b)=>hoursStuck(b)-hoursStuck(a));
+  const total = base.length;
   const rows = stuck.map(r=>{
     const h = hoursStuck(r);
     const hCls = h>72 ? ' class="num red"' : ' class="num"';
@@ -185,12 +228,12 @@ function renderStuck(){
     '</tr>';
   }).join("");
   const hero = total===0
-    ? '<div class="card hero"><div class="n">0</div><div class="lbl">All clear — every shipment moved in the last 48 hours.</div></div>'
-    : '<div class="card hero"><div class="n">'+total+'</div><div class="lbl">shipments stuck 48h+</div></div>';
+    ? '<div class="card hero"><div class="n">0</div><div class="lbl">All clear — every shipment in this range moved within 48 hours.</div></div>'
+    : '<div class="card hero"><div class="n">'+total+'</div><div class="lbl">order(s) stuck in the same stage for 48h+</div></div>';
   const table = stuck.length===0
-    ? '<div class="card empty">'+(total===0?"Nothing stuck right now.":"No matches for your search.")+'</div>'
+    ? '<div class="card empty">'+(total===0?"Nothing stuck in this date range.":"No matches for your search.")+'</div>'
     : '<div class="card"><div class="toolbar">'+searchBox()+'<span class="count">'+stuck.length+' of '+total+'</span></div>'+
-      '<table><thead><tr><th>Order</th><th>AWB</th><th>Status</th><th style="text-align:right">Hours stuck</th><th>Payment</th><th style="text-align:right">Value</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      '<table><thead><tr><th>Order</th><th>AWB</th><th>Stage</th><th style="text-align:right">Stuck for</th><th>Payment</th><th style="text-align:right">Value</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   $("content").innerHTML = hero + table + zeroHint();
   wireSearch();
 }
@@ -198,12 +241,12 @@ function renderStuck(){
 function renderAll(){
   $("pageK").textContent = "Page 2";
   $("pageH").textContent = "All shipments";
-  let rows = ALL.slice();
+  let rows = windowed();
   if(statusFilter) rows = rows.filter(r=>(r.current_status||"")===statusFilter);
   if(deliveredFilter==="delivered") rows = rows.filter(r=>r.is_terminal);
   if(deliveredFilter==="not") rows = rows.filter(r=>!r.is_terminal);
   rows = applySearch(rows);
-  const statuses = [...new Set(ALL.map(r=>r.current_status).filter(Boolean))].sort();
+  const statuses = [...new Set(windowed().map(r=>r.current_status).filter(Boolean))].sort();
   const body = rows.map(r=>'<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td>'+
       '<td class="awb">'+esc(r.awb)+'</td>'+
@@ -213,7 +256,7 @@ function renderAll(){
       '<td class="num" style="color:var(--muted)">'+esc(movedAt(r).toLocaleString("en-IN"))+'</td>'+
     '</tr>').join("");
   const toolbar = '<div class="toolbar">'+searchBox()+
-    '<select id="fStatus"><option value="">All statuses</option>'+
+    '<select id="fStatus"><option value="">All stages</option>'+
       statuses.map(s=>'<option '+(s===statusFilter?"selected":"")+'>'+esc(s)+'</option>').join("")+'</select>'+
     '<select id="fDeliv">'+
       '<option value="all"'+(deliveredFilter==="all"?" selected":"")+'>Delivered & not</option>'+
@@ -223,7 +266,7 @@ function renderAll(){
     '<span class="count">'+rows.length+'</span></div>';
   $("content").innerHTML = '<div class="card">'+toolbar+
     (rows.length===0?'<div class="empty">No matches.</div>':
-    '<table><thead><tr><th>Order</th><th>AWB</th><th>Status</th><th>Payment</th><th style="text-align:right">Value</th><th style="text-align:right">Last moved</th></tr></thead><tbody>'+body+'</tbody></table>')+
+    '<table><thead><tr><th>Order</th><th>AWB</th><th>Stage</th><th>Payment</th><th style="text-align:right">Value</th><th style="text-align:right">Last moved</th></tr></thead><tbody>'+body+'</tbody></table>')+
     '</div>'+zeroHint();
   wireSearch();
   $("fStatus").onchange=e=>{statusFilter=e.target.value;renderAll();};
@@ -233,13 +276,14 @@ function renderAll(){
 function renderOverview(){
   $("pageK").textContent = "Page 3";
   $("pageH").textContent = "Overview";
-  const total = ALL.length;
-  const delivered = ALL.filter(r=>r.is_terminal).length;
+  const data = windowed();
+  const total = data.length;
+  const delivered = data.filter(r=>r.is_terminal).length;
   const notDelivered = total - delivered;
-  const cod = ALL.filter(r=>(r.payment_type||"").toLowerCase().includes("cod")).length;
+  const cod = data.filter(r=>(r.payment_type||"").toLowerCase().includes("cod")).length;
   const prepaid = total - cod;
-  const stuck = ALL.filter(isStuck).length;
-  const openValue = ALL.filter(r=>!r.is_terminal).reduce((a,r)=>a+(Number(r.cod_amount)||0),0);
+  const stuck = data.filter(isStuck).length;
+  const openValue = data.filter(r=>!r.is_terminal).reduce((a,r)=>a+(Number(r.cod_amount)||0),0);
   const card=(k,v,s)=>'<div class="card stat"><div class="k">'+k+'</div><div class="v">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>';
   $("content").innerHTML = '<div class="cards">'+
     card("Total shipments", total) +
@@ -254,7 +298,7 @@ function renderOverview(){
 function zeroHint(){
   if(ALL.length>0) return "";
   return '<div class="banner warn2" style="margin-top:16px"><b>Connected, but 0 rows came back.</b> '+
-    'That usually means the read policy is blocking anonymous access. Tell your assistant "0 rows in Vercel" and run the read-policy SQL.</div>';
+    'That usually means the read policy is blocking anonymous access.</div>';
 }
 
 function searchBox(){
@@ -271,6 +315,18 @@ function wireSearch(){
 
 document.querySelectorAll("#nav button").forEach(b=>{
   b.onclick=()=>{view=b.dataset.view;search="";render();};
+});
+$("from").value = dateFrom;
+$("to").value = dateTo;
+$("from").onchange = e=>{ dateFrom=e.target.value; render(); };
+$("to").onchange = e=>{ dateTo=e.target.value; render(); };
+document.querySelectorAll("[data-preset]").forEach(b=>{
+  b.onclick=()=>{
+    const p=b.dataset.preset;
+    if(p==="all"){ dateFrom=""; dateTo=""; }
+    else { dateTo=todayStr(); dateFrom=addDaysStr(-parseInt(p,10)); }
+    $("from").value=dateFrom; $("to").value=dateTo; render();
+  };
 });
 $("refresh").onclick=loadData;
 loadData();
