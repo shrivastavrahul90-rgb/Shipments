@@ -115,6 +115,28 @@
     font-size:13px;font-weight:600;white-space:nowrap;min-width:62px;transition:width .5s cubic-bezier(.2,.7,.2,1)}
   .fbar .pc{margin-left:auto;opacity:.82;font-weight:500;padding-left:12px}
 
+  .fbar2{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);margin-bottom:18px;flex-wrap:wrap}
+  .fbar2 svg{width:16px;height:16px;color:#16A34A;flex-shrink:0}
+  .fbar2 .clr{margin-left:auto;border:1px solid var(--line2);background:var(--card);padding:7px 13px;border-radius:9px;
+    cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink)}
+  .fbar2 .clr:hover{background:#F3F3F8}
+  .rcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:13px;margin-bottom:20px}
+  .rcard{padding:16px 18px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}
+  .rcard:hover{transform:translateY(-2px)}
+  .rcard.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),var(--shadow)}
+  .rcard .rk{font-size:12.5px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
+  .rcard .rk .d{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .rcard .rv{font-family:var(--display);font-size:28px;font-weight:600;margin-top:9px;letter-spacing:-.02em}
+  .rcard .rs{font-size:11.5px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+  .drop{border:2px dashed var(--line2);border-radius:var(--radius);padding:50px 30px;text-align:center;background:var(--card)}
+  .drop.drag{border-color:var(--accent);background:var(--accent-soft)}
+  .drop>svg{width:36px;height:36px;color:var(--faint);margin-bottom:14px}
+  .drop .dt{font-family:var(--display);font-size:18px;font-weight:600}
+  .drop .ds{font-size:13px;color:var(--muted);margin:8px auto 0;max-width:440px;line-height:1.55}
+  .drop label{display:inline-block;margin-top:18px;padding:10px 20px;background:var(--accent);color:#fff;
+    border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:600}
+  .drop label:hover{filter:brightness(1.06)}
+
   .banner{padding:15px 18px;border-radius:12px;margin-bottom:16px;font-size:13px;border:1px solid}
   .banner.err{background:#FCECEC;border-color:#F6CFCF;color:#991B1B}
   .banner.warn2{background:#FEF4E6;border-color:#F4DEB5;color:#92580A}
@@ -143,6 +165,7 @@
         <button data-view="stuck" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>Stuck shipments</span></button>
         <button data-view="all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.21M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg><span>All shipments</span></button>
         <button data-view="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Overview</span></button>
+        <button data-view="recon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>COD reconciliation</span></button>
       </nav>
     </div>
     <div class="foot">Live from NimbusPost<br>via Supabase</div>
@@ -157,7 +180,7 @@
       <div class="synced" id="synced"></div>
     </div>
 
-    <div class="ctrls">
+    <div class="ctrls" id="ctrls">
       <div class="datebox">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <input type="date" id="from" title="From date">
@@ -180,6 +203,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const SUPABASE_URL = "https://myndamxcarcrlzxdlirh.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15bmRhbXhjYXJjcmx6eGRsaXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzYzODEsImV4cCI6MjA5ODA1MjM4MX0.oPG3UvLD-jYi-6fGyvj9W24prUZ2-6emp9oZhbt2SmE";
@@ -298,9 +322,13 @@ function setRangeNote(){
 
 function render(){
   setRangeNote();
+  const showCtrls = view!=="recon";
+  $("ctrls").style.display = showCtrls?"flex":"none";
+  $("rangenote").style.display = showCtrls?"block":"none";
   document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active", b.dataset.view===view));
   if(view==="stuck") return renderStuck();
   if(view==="all") return renderAll();
+  if(view==="recon") return renderRecon();
   return renderOverview();
 }
 
@@ -448,6 +476,173 @@ function wireSearch(){
 
 function setPreset(p){
   document.querySelectorAll("#presets button").forEach(b=>b.classList.toggle("on", b.dataset.preset===p));
+}
+
+/* ---------- COD reconciliation ---------- */
+const RECON_TAT_DAYS = 7;
+let depositFileName = "";
+let recon = null;
+let reconBucket = "unpaid";
+
+const normAwb = s => String(s==null?"":s).trim();
+const normOrd = s => String(s==null?"":s).trim().replace(/^#+/,"").toUpperCase();
+const daysSince = iso => iso ? (Date.now()-new Date(iso).getTime())/86400000 : 999;
+const isDeliveredCOD = r => stageOf(r.current_status)==="delivered" && (r.payment_type||"").toLowerCase().includes("cod");
+
+function handleFile(file){
+  depositFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:"array"});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {defval:""});
+      computeRecon(rows);
+      reconBucket = "unpaid";
+      renderRecon();
+    }catch(err){
+      $("content").innerHTML = '<div class="banner err"><b>Could not read that file.</b><br>'+esc(err.message||err)+'</div>'+reconUploadHTML();
+      wireDrop();
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function computeRecon(rows){
+  const empty = {unpaid:[],awaiting:[],mismatch:[],reconciled:[],unmatched:[],lines:0,checked:0};
+  if(!rows || !rows.length){ recon = empty; return; }
+  const keys = Object.keys(rows[0]);
+  const find = (...subs)=>keys.find(k=>{const l=k.toLowerCase(); return subs.every(s=>l.includes(s));});
+  const kAwb = find("awb") || find("waybill");
+  const kOrd = find("order","id") || find("order");
+  const kAmt = find("amount") || find("cod") || find("remit");
+  const kDel = find("delivery");
+
+  const deposits = rows.map(r=>({
+    awb: normAwb(r[kAwb]),
+    ord: normOrd(r[kOrd]),
+    amt: parseFloat(String(r[kAmt]).replace(/[^0-9.\-]/g,"")) || 0,
+    del: String(r[kDel]||""),
+    rawOrd: String(r[kOrd]||"")
+  })).filter(d=>d.awb||d.ord);
+
+  const byAwb = new Map(), byOrd = new Map();
+  deposits.forEach(d=>{ if(d.awb) byAwb.set(d.awb,d); if(d.ord) byOrd.set(d.ord,d); });
+
+  const shipAwb = new Set(), shipOrd = new Set();
+  ALL.forEach(r=>{ if(r.awb) shipAwb.add(normAwb(r.awb)); if(r.order_ref) shipOrd.add(normOrd(r.order_ref)); });
+
+  const res = {unpaid:[],awaiting:[],mismatch:[],reconciled:[],unmatched:[],lines:deposits.length,checked:0};
+  ALL.filter(isDeliveredCOD).forEach(r=>{
+    res.checked++;
+    const a = normAwb(r.awb), o = normOrd(r.order_ref);
+    const dep = (a && byAwb.get(a)) || (o && byOrd.get(o)) || null;
+    if(dep){
+      const exp = Number(r.cod_amount)||0, got = dep.amt||0;
+      if(exp>0 && got>0 && Math.abs(exp-got)>1) res.mismatch.push({r,exp,got,diff:got-exp});
+      else res.reconciled.push({r,got});
+    }else{
+      const age = daysSince(r.last_event_at||r.status_changed_at);
+      if(age>RECON_TAT_DAYS) res.unpaid.push({r,age});
+      else res.awaiting.push({r,age});
+    }
+  });
+  deposits.forEach(d=>{
+    const inShip = (d.awb && shipAwb.has(d.awb)) || (d.ord && shipOrd.has(d.ord));
+    if(!inShip) res.unmatched.push(d);
+  });
+  recon = res;
+}
+
+function reconUploadHTML(){
+  return '<div class="drop" id="drop">'+
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'+
+    '<div class="dt">Upload your COD remittance file</div>'+
+    '<div class="ds">CSV or Excel from NimbusPost. Each line is matched to your delivered COD orders by AWB, then anything delivered but unpaid past '+RECON_TAT_DAYS+' days gets flagged.</div>'+
+    '<label for="codfile">Choose file</label>'+
+    '<input type="file" id="codfile" accept=".csv,.xlsx,.xls" style="display:none">'+
+    '</div>';
+}
+function wireDrop(){
+  const inp = $("codfile");
+  if(inp) inp.onchange = e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+  const dz = $("drop"); if(!dz) return;
+  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add("drag");}));
+  ["dragleave"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove("drag");}));
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag"); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);});
+}
+
+function tableCard(headers,body,aligns){
+  const th = headers.map((h,i)=>'<th'+((aligns&&aligns[i]==="r")?' style="text-align:right"':'')+'>'+h+'</th>').join("");
+  return '<div class="card"><table><thead><tr>'+th+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+}
+const emptyCard = (m)=>'<div class="card empty">'+m+'</div>';
+const tdN = (v)=>'<td class="num">'+v+'</td>';
+
+function reconTable(){
+  const b = reconBucket;
+  if(b==="unpaid" || b==="awaiting"){
+    const arr = recon[b].slice().sort((x,y)=>y.age-x.age);
+    if(!arr.length) return emptyCard(b==="unpaid"?"No overdue unpaid COD orders — you're square.":"Nothing waiting inside the "+RECON_TAT_DAYS+"-day window.");
+    const body = arr.map(({r,age})=>'<tr>'+
+      '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+statusPill(r.current_status)+'</td>'+tdN(Math.round(age)+'d')+
+      '<td>'+payText(r.payment_type)+'</td>'+tdN(inr(Number(r.cod_amount)))+'</tr>').join("");
+    return tableCard(["Order","AWB","Stage","Delivered ago","Payment","Value"],body,[null,null,null,"r",null,"r"]);
+  }
+  if(b==="mismatch"){
+    const arr = recon.mismatch;
+    if(!arr.length) return emptyCard("No amount mismatches — every matched deposit equals the order value.");
+    const body = arr.map(({r,exp,got,diff})=>'<tr>'+
+      '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
+      tdN(inr(exp))+tdN(inr(got))+
+      '<td class="num" style="color:'+(diff<0?"#DC2626":"#16A34A")+';font-weight:700">'+(diff>0?"+":"")+inr(diff)+'</td></tr>').join("");
+    return tableCard(["Order","AWB","Expected","Deposited","Difference"],body,[null,null,"r","r","r"]);
+  }
+  if(b==="reconciled"){
+    const arr = recon.reconciled;
+    if(!arr.length) return emptyCard("No reconciled orders in this file yet.");
+    const body = arr.map(({r,got})=>'<tr>'+
+      '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
+      '<td style="color:var(--muted)">'+esc(movedAt(r).toLocaleDateString("en-IN"))+'</td>'+
+      tdN(inr(got||Number(r.cod_amount)))+'</tr>').join("");
+    return tableCard(["Order","AWB","Delivered","Deposited"],body,[null,null,null,"r"]);
+  }
+  const arr = recon.unmatched;
+  if(!arr.length) return emptyCard("Every deposit line matched an order in your system.");
+  const body = arr.map(d=>'<tr>'+
+    '<td class="order">'+esc(d.rawOrd||("#"+d.ord))+'</td><td class="awb">'+esc(d.awb)+'</td>'+
+    '<td style="color:var(--muted)">'+esc(d.del)+'</td>'+tdN(inr(d.amt))+'</tr>').join("");
+  return tableCard(["Order ID (file)","AWB","Delivery date (file)","Amount"],body,[null,null,null,"r"]);
+}
+
+function renderRecon(){
+  $("pageK").textContent = "Console";
+  $("pageH").textContent = "COD reconciliation";
+  if(!recon){
+    $("content").innerHTML = reconUploadHTML();
+    wireDrop();
+    return;
+  }
+  const sumVal = arr=>arr.reduce((a,x)=>a+(Number(x.r?x.r.cod_amount:x.amt)||0),0);
+  const sumDep = arr=>arr.reduce((a,x)=>a+(Number(x.got!=null?x.got:x.amt)||0),0);
+  const buckets = [
+    {key:"unpaid",     label:"Unpaid · overdue",     color:"#DC2626", n:recon.unpaid.length,     amt:sumVal(recon.unpaid)},
+    {key:"awaiting",   label:"Awaiting · \u22647d",   color:"#C77807", n:recon.awaiting.length,   amt:sumVal(recon.awaiting)},
+    {key:"mismatch",   label:"Amount mismatch",       color:"#C2410C", n:recon.mismatch.length,   amt:sumVal(recon.mismatch)},
+    {key:"reconciled", label:"Reconciled",            color:"#16A34A", n:recon.reconciled.length, amt:sumDep(recon.reconciled)},
+    {key:"unmatched",  label:"Unmatched deposits",    color:"#6B7280", n:recon.unmatched.length,  amt:sumDep(recon.unmatched)},
+  ];
+  const cards = buckets.map(b=>'<div class="card rcard'+(reconBucket===b.key?' on':'')+'" data-bk="'+b.key+'">'+
+    '<div class="rk"><span class="d" style="background:'+b.color+'"></span>'+b.label+'</div>'+
+    '<div class="rv">'+b.n+'</div><div class="rs">'+inr(b.amt)+'</div></div>').join("");
+  const bar = '<div class="fbar2">'+
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'+
+    'Checked <b style="color:var(--ink);font-weight:600">'+recon.checked+'</b> delivered COD orders against <b style="color:var(--ink);font-weight:600">'+esc(depositFileName)+'</b> ('+recon.lines+' deposit lines)'+
+    '<button class="clr" id="clrRecon">Upload another file</button></div>';
+  $("content").innerHTML = bar + '<div class="rcards">'+cards+'</div>' + reconTable();
+  document.querySelectorAll(".rcard").forEach(c=>c.onclick=()=>{ reconBucket=c.dataset.bk; renderRecon(); });
+  $("clrRecon").onclick = ()=>{ recon=null; depositFileName=""; renderRecon(); };
 }
 
 document.querySelectorAll("#nav button").forEach(b=>{
