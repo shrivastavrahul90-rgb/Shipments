@@ -252,6 +252,27 @@ function stageOf(s){
   return "other";
 }
 
+function courierBrand(name){
+  const n=(name||"").toLowerCase().trim();
+  if(!n) return "Unknown";
+  if(n.includes("blue")&&n.includes("dart")) return "Bluedart";
+  if(n.includes("delhiver")) return "Delhivery";
+  if(n.includes("xpressbee")) return "XpressBees";
+  if(n.includes("ekart")) return "Ekart";
+  if(n.includes("dtdc")) return "DTDC";
+  if(n.includes("amazon")) return "Amazon";
+  if(n.includes("ecom")) return "Ecom Express";
+  if(n.includes("shadowfax")||n.includes("shadow fax")) return "Shadowfax";
+  if(n.includes("india post")||n.includes("speed post")) return "India Post";
+  if(n.includes("smartr")) return "Smartr";
+  if(n.includes("dhl")) return "DHL";
+  if(n.includes("fedex")) return "FedEx";
+  if(n.includes("professional")) return "Professional";
+  if(n.includes("shree maruti")||n.includes("maruti")) return "Shree Maruti";
+  if(n.includes("expressbees")) return "XpressBees";
+  return (name||"").split(/[\s_]+/)[0];
+}
+
 function rowDate(r){
   if(r.created) return String(r.created).slice(0,10);
   if(r.last_event_at) return String(r.last_event_at).slice(0,10);
@@ -280,7 +301,7 @@ async function loadData(){
     const pageSize = 1000; let from = 0; const out = [];
     while(true){
       const { data, error } = await sb.from("shipments")
-        .select("order_ref,awb,current_status,is_terminal,payment_type,cod_amount,last_event_at,status_changed_at,last_synced_at,created:raw->>created")
+        .select("order_ref,awb,current_status,is_terminal,payment_type,cod_amount,last_event_at,status_changed_at,last_synced_at,created:raw->>created,courier:raw->>courier_name")
         .order("last_event_at",{ascending:false})
         .range(from, from+pageSize-1);
       if(error) throw error;
@@ -343,6 +364,7 @@ function renderStuck(){
     return '<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td>'+
       '<td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+esc(courierBrand(r.courier))+'</td>'+
       '<td>'+statusPill(r.current_status)+'</td>'+
       '<td'+hCls+'>'+h.toFixed(1)+'h</td>'+
       '<td>'+payText(r.payment_type)+'</td>'+
@@ -362,7 +384,7 @@ function renderStuck(){
   const table = stuck.length===0
     ? '<div class="card empty">'+(total===0?"Nothing stuck in this date range.":"No matches for your search.")+'</div>'
     : '<div class="card"><div class="toolbar">'+searchBox()+'<span class="count">'+stuck.length+' of '+total+'</span></div>'+
-      '<table><thead><tr><th>Order</th><th>AWB</th><th>Stage</th><th style="text-align:right">Stuck for</th><th>Payment</th><th style="text-align:right">Value</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      '<table><thead><tr><th>Order</th><th>AWB</th><th>Partner</th><th>Stage</th><th style="text-align:right">Stuck for</th><th>Payment</th><th style="text-align:right">Value</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   $("content").innerHTML = hero + table + zeroHint();
   wireSearch();
 }
@@ -379,6 +401,7 @@ function renderAll(){
   const body = rows.map(r=>'<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td>'+
       '<td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+esc(courierBrand(r.courier))+'</td>'+
       '<td>'+statusPill(r.current_status)+'</td>'+
       '<td>'+payText(r.payment_type)+'</td>'+
       '<td class="num">'+inr(Number(r.cod_amount))+'</td>'+
@@ -395,7 +418,7 @@ function renderAll(){
     '<span class="count">'+rows.length+'</span></div>';
   $("content").innerHTML = '<div class="card">'+toolbar+
     (rows.length===0?'<div class="empty">No matches.</div>':
-    '<table><thead><tr><th>Order</th><th>AWB</th><th>Stage</th><th>Payment</th><th style="text-align:right">Value</th><th style="text-align:right">Last moved</th></tr></thead><tbody>'+body+'</tbody></table>')+
+    '<table><thead><tr><th>Order</th><th>AWB</th><th>Partner</th><th>Stage</th><th>Payment</th><th style="text-align:right">Value</th><th style="text-align:right">Last moved</th></tr></thead><tbody>'+body+'</tbody></table>')+
     '</div>'+zeroHint();
   wireSearch();
   $("fStatus").onchange=e=>{statusFilter=e.target.value;renderAll();};
@@ -435,6 +458,46 @@ function renderOverview(){
     '<div class="fnl-sub">Share of orders by stage'+(total===0?'':' · '+total+' orders in range')+'</div>'+
     '<div class="funnel">'+funnelRows+'</div></div>';
 
+  // ----- delivery partner performance -----
+  const grp = {};
+  data.forEach(r=>{
+    const b = courierBrand(r.courier);
+    const g = grp[b] || (grp[b]={total:0,transit:0,delivered:0,exception:0,rto:0,cod:0});
+    g.total++;
+    const st = stageOf(r.current_status);
+    if(st==="transit") g.transit++;
+    else if(st==="delivered") g.delivered++;
+    else if(st==="exception") g.exception++;
+    else if(st==="rto") g.rto++;
+    if((r.payment_type||"").toLowerCase().includes("cod")) g.cod++;
+  });
+  const partners = Object.keys(grp).sort((a,b)=>grp[b].total-grp[a].total);
+  const P = (n,t)=> t>0 ? Math.round(n/t*100)+"%" : "0%";
+  const colCell = (n,t,col)=>'<td class="num" style="color:'+col+'">'+P(n,t)+'</td>';
+  const pbody = partners.map(name=>{
+    const g = grp[name];
+    return '<tr>'+
+      '<td style="font-weight:600">'+esc(name)+'</td>'+
+      '<td class="num">'+g.total+'</td>'+
+      colCell(g.transit,g.total,STAGE.transit.fg)+
+      colCell(g.delivered,g.total,STAGE.delivered.fg)+
+      colCell(g.exception,g.total,STAGE.exception.fg)+
+      colCell(g.rto,g.total,STAGE.rto.fg)+
+      '<td class="num">'+P(g.cod,g.total)+'</td>'+
+      '<td class="num" style="color:var(--muted)">'+P(g.total-g.cod,g.total)+'</td>'+
+    '</tr>';
+  }).join("");
+  const partnerCard = (partners.length===0)
+    ? ''
+    : '<div class="card" style="margin-bottom:18px">'+
+      '<div style="padding:20px 22px 4px"><div class="fnl-head">Delivery partner performance</div>'+
+      '<div class="fnl-sub">Per courier, for the selected date range</div></div>'+
+      '<table><thead><tr><th>Partner</th><th style="text-align:right">Orders</th>'+
+      '<th style="text-align:right">In transit</th><th style="text-align:right">Delivered</th>'+
+      '<th style="text-align:right">Exception</th><th style="text-align:right">RTO</th>'+
+      '<th style="text-align:right">COD</th><th style="text-align:right">Prepaid</th></tr></thead>'+
+      '<tbody>'+pbody+'</tbody></table></div>';
+
   const delivered = c.delivered;
   const notDelivered = total - delivered;
   const cod = data.filter(r=>(r.payment_type||"").toLowerCase().includes("cod")).length;
@@ -451,7 +514,7 @@ function renderOverview(){
     card("Value in transit", inr(openValue), "all non-delivered") +
   '</div>';
 
-  $("content").innerHTML = funnel + cards + zeroHint();
+  $("content").innerHTML = funnel + partnerCard + cards + zeroHint();
 }
 
 function zeroHint(){
@@ -479,7 +542,7 @@ function setPreset(p){
 
 /* ---------- COD reconciliation (cumulative ledger in Supabase) ---------- */
 const RECON_TAT_DAYS = 7;
-let payments = null;          // full ledger loaded from cod_payments
+let payments = null;
 let paymentsLoading = false;
 let recon = null;
 let reconBucket = "unpaid";
@@ -639,9 +702,10 @@ function reconTable(){
     if(!arr.length) return emptyCard(b==="unpaid"?"No overdue unpaid COD orders — you are square.":"Nothing waiting inside the "+RECON_TAT_DAYS+"-day window.");
     const body = arr.map(({r,age})=>'<tr>'+
       '<td class="order">'+esc(r.order_ref)+'</td><td class="awb">'+esc(r.awb)+'</td>'+
+      '<td>'+esc(courierBrand(r.courier))+'</td>'+
       '<td>'+statusPill(r.current_status)+'</td>'+tdN(Math.round(age)+'d')+
       '<td>'+payText(r.payment_type)+'</td>'+tdN(inr(Number(r.cod_amount)))+'</tr>').join("");
-    return tableCard(["Order","AWB","Stage","Delivered ago","Payment","Value"],body,[null,null,null,"r",null,"r"]);
+    return tableCard(["Order","AWB","Partner","Stage","Delivered ago","Payment","Value"],body,[null,null,null,null,"r",null,"r"]);
   }
   if(b==="mismatch"){
     const arr = recon.mismatch;
